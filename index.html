@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Homebrew Campaign Manager</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <h1>&#9876; Campaign Manager</h1>
+  <nav id="tab-nav"></nav>
+  <div class="spacer"></div>
+  <div class="fileops">
+    <button onclick="exportData()">Export JSON</button>
+    <button onclick="document.getElementById('import-file').click()">Import JSON</button>
+    <input type="file" id="import-file" accept="application/json" style="display:none" onchange="importData(event)">
+  </div>
+</header>
+<main id="tab-content"></main>
+
+<script src="app.js"></script>
+</body>
+</html>
