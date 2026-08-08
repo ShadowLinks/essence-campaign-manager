@@ -19,7 +19,11 @@ name: Build and publish Docker image
       - 'app.js'
       - '.github/workflows/docker-publish.yml'
   workflow_dispatch: {}
-
+# Least-privilege default: this workflow only checks out the repo and talks to
+# Docker Hub (via its own separate secret), it never needs to write anything
+# back to the GitHub repo itself.
+permissions:
+  contents: read
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
