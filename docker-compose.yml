@@ -1,14 +1,46 @@
 services:
+  # Tailscale sidecar - joins your tailnet and shares its network with the app
+  # container below. Unraid's own built-in "Tailscale" toggle (the one that
+  # produced the ".tailscale_state" error) only works reliably on containers
+  # created through the Unraid Docker UI template, not compose-managed ones -
+  # the Unraid/Tailscale community's own guidance for compose stacks is this
+  # sidecar pattern instead, straight from Tailscale's docs.
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: essence-campaign-manager-tailscale
+    hostname: essence-campaign-manager
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_EXTRA_ARGS=--accept-dns=true
+    volumes:
+      - ./tailscale-state:/var/lib/tailscale
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    ports:
+      # Still reachable on your LAN at <unraid-ip>:8080, in addition to the
+      # tailnet address, since the app container shares this network below.
+      - "8080:80"
+    restart: unless-stopped
+    labels:
+      net.unraid.docker.webui: "http://[IP]:[PORT:8080]/"
+
   essence-campaign-manager:
     # Pulls the pre-built image from Docker Hub instead of building locally -
     # GitHub Actions rebuilds and pushes it automatically on every push to
     # this repo (see .github/workflows/docker-publish.yml). Unraid just pulls.
     image: shadowlinks/essence-campaign-manager:latest
     container_name: essence-campaign-manager
-    ports:
-      # Unraid's own web UI listens on 80/443, so this maps to host port 8080 by default.
-      # Change the left-hand side (host port) if 8080 is already taken on your box.
-      - "8080:80"
+    depends_on:
+      - tailscale
+    network_mode: "service:tailscale"
     restart: unless-stopped
-    labels:
-      net.unraid.docker.webui: "http://[IP]:[PORT:8080]/"
+
+# --- Don't want Tailscale? ---
+# Delete the "tailscale" service above, remove "depends_on"/"network_mode"
+# from essence-campaign-manager, and give it back its own ports section:
+#   ports:
+#     - "8080:80"
