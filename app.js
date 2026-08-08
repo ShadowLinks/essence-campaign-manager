@@ -517,6 +517,22 @@ let state = {
 
 function uid(){ return 'id'+Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
 function h(s){ return (s===undefined||s===null)?'':String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// For free-text values embedded inside a single-quoted JS string argument within an
+// inline event-handler attribute, e.g. onclick="fn('${hjs(value)}')". h() alone is NOT
+// safe there: the browser HTML-decodes attribute values (turning &#39; back into ')
+// before handing the string to the JS parser, so an entity-encoded quote does not stop
+// a string-breakout - only backslash-escaping the quote for the JS-string context does.
+// This escapes backslash+quote for JS first, then HTML-escapes the rest for the
+// surrounding double-quoted HTML attribute.
+function hjs(s){
+  return (s===undefined||s===null) ? '' : String(s)
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
 function tierIndex(t){ return TIERS.indexOf(t); }
 
 function blankMonster(){
@@ -991,7 +1007,7 @@ function renderOverview(){
     <div class="two-col">
       <div>
         <h3>Damage types <span class="badge">${state.damageTypes.length}</span></h3>
-        <div class="pill-row">${state.damageTypes.map(d => `<span class="tag">${h(d)} <span class="close-x" onclick="removeFromList('damageTypes','${h(d)}')">&times;</span></span>`).join('')}</div>
+        <div class="pill-row">${state.damageTypes.map(d => `<span class="tag">${h(d)} <span class="close-x" onclick="removeFromList('damageTypes','${hjs(d)}')">&times;</span></span>`).join('')}</div>
         <div class="row-actions" style="margin-top:0.5rem;">
           <input id="new-damage-type" placeholder="e.g. Bleed" style="width:auto;flex:1;">
           <button class="btn small" onclick="addToList('damageTypes','new-damage-type')">Add</button>
@@ -999,13 +1015,13 @@ function renderOverview(){
       </div>
       <div>
         <h3>Creature types <span class="badge">${state.creatureTypes.length}</span></h3>
-        <div class="pill-row">${state.creatureTypes.map(d => `<span class="tag">${h(d)} <span class="close-x" onclick="removeFromList('creatureTypes','${h(d)}')">&times;</span></span>`).join('')}</div>
+        <div class="pill-row">${state.creatureTypes.map(d => `<span class="tag">${h(d)} <span class="close-x" onclick="removeFromList('creatureTypes','${hjs(d)}')">&times;</span></span>`).join('')}</div>
         <div class="row-actions" style="margin-top:0.5rem;">
           <input id="new-creature-type" placeholder="e.g. Spirit" style="width:auto;flex:1;">
           <button class="btn small" onclick="addToList('creatureTypes','new-creature-type')">Add</button>
         </div>
         <h3 style="margin-top:1rem;">Common tags <span class="badge">${state.commonTags.length}</span></h3>
-        <div class="pill-row">${state.commonTags.map(d => `<span class="tag">${h(d)} <span class="close-x" onclick="removeFromList('commonTags','${h(d)}')">&times;</span></span>`).join('')}</div>
+        <div class="pill-row">${state.commonTags.map(d => `<span class="tag">${h(d)} <span class="close-x" onclick="removeFromList('commonTags','${hjs(d)}')">&times;</span></span>`).join('')}</div>
         <div class="row-actions" style="margin-top:0.5rem;">
           <input id="new-tag" placeholder="e.g. Swarm" style="width:auto;flex:1;">
           <button class="btn small" onclick="addToList('commonTags','new-tag')">Add</button>
@@ -1473,7 +1489,7 @@ function renderBuilder(){
 
     <div class="section-title">Tags <span class="muted" style="text-transform:none;">(drives auto rules like Shapechanger/Structure/Psychic-Aligned/Shadow-Aligned/Void-Immune)</span></div>
     <div class="pill-row">
-      ${state.commonTags.map(t => `<label style="display:inline-flex;align-items:center;gap:0.3rem;width:auto;text-transform:none;font-size:0.8rem;"><input type="checkbox" style="width:auto;" ${((d.tags||[]).includes(t))?'checked':''} onchange="toggleTag('${h(t)}', this.checked)"> ${h(t)}</label>`).join('')}
+      ${state.commonTags.map(t => `<label style="display:inline-flex;align-items:center;gap:0.3rem;width:auto;text-transform:none;font-size:0.8rem;"><input type="checkbox" style="width:auto;" ${((d.tags||[]).includes(t))?'checked':''} onchange="toggleTag('${hjs(t)}', this.checked)"> ${h(t)}</label>`).join('')}
     </div>
 
     <div class="section-title">Defenses</div>
@@ -1657,7 +1673,7 @@ function renderSuggestions(d){
   return '<div class="suggest-box">' + list.map(t => `
     <div class="list-item" style="cursor:default;">
       <div><strong>${h(t.name)}</strong> <span class="muted">(${t.key}, used by ${t.count} monster${t.count>1?'s':''})</span><br><span class="muted">${h(t.text).slice(0,140)}${t.text.length>140?'...':''}</span></div>
-      <button class="btn small secondary" onclick="addSuggestedTrait('${t.key}','${h(t.name).replace(/'/g,"&#39;")}')">+ Add</button>
+      <button class="btn small secondary" onclick="addSuggestedTrait('${t.key}','${hjs(t.name)}')">+ Add</button>
     </div>`).join('') + '</div>';
 }
 function addSuggestedTrait(key, name){
@@ -1792,7 +1808,7 @@ function renderConfluenceSection(){
         <div><label>Confluence essence name</label><input id="new-confluence-name"></div>
         <div><label>Description / notes</label><input id="new-confluence-desc"></div>
       </div>
-      <button class="btn small" style="margin-top:0.5rem;" onclick='saveConfluence(${JSON.stringify(selected)})'>Save this combination</button>
+      <button class="btn small" style="margin-top:0.5rem;" onclick='saveConfluence(${JSON.stringify(selected).replace(/'/g, "\\u0027")})'>Save this combination</button>
     </div>`;
   }
   const summary = selected.length===0 && !confluenceNameFilter
@@ -2078,7 +2094,7 @@ function renderCombatant(c, enc){
     <div class="hp-bar"><div style="width:${pct}%; background:${pct<25?'var(--danger)':pct<60?'var(--warn)':'var(--good)'}"></div></div>
     ${renderChipRow(monster)}
     <div class="pill-row">
-      ${conditions.map(cond => `<span class="condition-badge" title="Click to remove" onclick="removeCondition('${c.id}', '${h(cond)}')">${h(cond)} &times;</span>`).join('')}
+      ${conditions.map(cond => `<span class="condition-badge" title="Click to remove" onclick="removeCondition('${c.id}', '${hjs(cond)}')">${h(cond)} &times;</span>`).join('')}
       <select style="width:auto;display:inline-block;" onchange="if(this.value){addCondition('${c.id}', this.value); this.value='';}">
         <option value="">+ Condition...</option>
         ${CONDITIONS.map(cd => `<option value="${cd}">${cd}</option>`).join('')}
