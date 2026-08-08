@@ -16,7 +16,7 @@ const DEFAULT_CREATURE_TYPES = [
   'Giant','Humanoid','Monstrosity','Ooze','Plant','Undead','Structure'
 ];
 
-const DEFAULT_TAGS = ['Shapechanger','Structure','Psychic-Aligned','Shadow-Aligned','Void-Immune','Ethereal'];
+const DEFAULT_TAGS = ['Shapechanger','Structure','Psychic-Aligned','Shadow-Aligned','Void-Immune','Ethereal','Demon','Devil'];
 
 const ELEMENTAL_ALIGNMENTS = ['Cold','Fire','Water','Lightning','Earth'];
 
@@ -485,6 +485,7 @@ function computeTypeDefaults(monster){
 }
 function getEffectiveProfile(monster){
   const manual = monster.damageProfile || [];
+  if(monster.disableAutoRules) return manual;
   const auto = computeTypeDefaults(monster).filter(a => !manual.some(mm => mm.damageType === a.damageType && mm.category === a.category));
   return [...manual, ...auto];
 }
@@ -499,7 +500,7 @@ let state = {
   essences: buildEssenceList(),
   confluenceCombos: [...CANON_CONFLUENCE],
   damageProperties: buildSeedDamageProperties(),
-  customTypeRules: [],
+  customTypeRules: buildSeedCustomTypeRules(),
   monsters: buildSeedMonsters(),
   characters: [],
   encounter: { combatants: [], round: 1, activeIndex: -1, tyrannyOfRank: false },
@@ -524,7 +525,7 @@ function blankMonster(){
     size:'Medium', alignment:'', ac:'', hp:'', hpFormula:'', speed:'30 ft.',
     abilities:{str:10,dex:10,con:10,int:10,wis:10,cha:10},
     savingThrows:'', skills:'', senses:'', languages:'', proficiencyBonus:'+2',
-    damageProfile:[], conditionImmunities:'',
+    damageProfile:[], conditionImmunities:'', disableAutoRules:false,
     traits:[], actions:[], bonusActions:[], reactions:[], legendaryActions:[],
     environment:'', notes:'', loot:'',
     status:'ready', importWarnings:[], variantOf:''
@@ -545,6 +546,22 @@ function buildSeedDamageProperties(){
     {id: uid(), name:"Zuggtmoy's Rancor", damageType:'Poison', category:'weakness', extraDamage:'', note:"While the Devil is poisoned, it is unable to take the dash, disengage, or dodge actions, and if they have a flying speed, it is halved. Taking poison damage also causes the Devil to suffer these effects, except they only last until the end of their next turn."},
     {id: uid(), name:'Conductive Scales', damageType:'Lightning', category:'weakness', extraDamage:'', note:'The dragon has disadvantage on saving throws against bolts of lightning or spell effects that deal lightning damage.'},
     {id: uid(), name:'Superconductor', damageType:'Lightning', category:'immunity', mode:'', extraDamage:'', note:"Whenever this dragon would take lightning damage, it instead takes no damage and immediately regains its breath weapon. Alternative to a plain Lightning immunity entry for Blue/Bronze dragons."}
+  ];
+}
+// Auto-rules pre-filled from the damage properties above wherever the property's own
+// wording already named a category/subtype it applies to across the board ("a demon",
+// "the Devil", "the dragon"). Tag a monster Demon or Devil to get the Fiend-subtype ones;
+// anything typed Dragon gets Conductive Scales automatically. Superconductor is left out
+// on purpose - the note calls it an alternative for specifically Blue/Bronze dragons, not
+// dragons in general, so forcing it onto every dragon would be wrong; add it by hand (or
+// as your own custom rule scoped to a "Blue Dragon"/"Bronze Dragon" tag) if you want it
+// automatic for those two. Blighted Connection and Flammable Flesh aren't tied to any one
+// type/tag in their own wording either, so they're left as library-only, opt-in properties.
+function buildSeedCustomTypeRules(){
+  return [
+    {id: uid(), matchKind:'tag', matchValue:'Demon', damageType:'Fire', category:'boon', mode:'', extraDamage:'', note:"Explosive Fluids: when reduced to 0 hit points from an effect that deals fire damage, they explode, dealing Xd6 fire damage in a 10-foot radius around them, with X being equal to half of the creature's CR (minimum of 1d6)."},
+    {id: uid(), matchKind:'tag', matchValue:'Devil', damageType:'Poison', category:'weakness', extraDamage:'', note:"Zuggtmoy's Rancor: while poisoned, unable to take the dash, disengage, or dodge actions, and if it has a flying speed, it is halved. Taking poison damage also causes it to suffer these effects, except they only last until the end of its next turn."},
+    {id: uid(), matchKind:'type', matchValue:'Dragon', damageType:'Lightning', category:'weakness', extraDamage:'', note:'Conductive Scales: disadvantage on saving throws against bolts of lightning or spell effects that deal lightning damage.'}
   ];
 }
 // Two example monsters seeded straight from your Monster Revamp notes (Ghost, Zombie),
@@ -571,7 +588,7 @@ function buildSeedMonsters(){
       actions:[{name:'Withering Touch', text:'Melee Spell Attack: +5 to hit, reach 5 ft., one target. Hit: 17 (4d6+3) necrotic damage.'}],
       bonusActions:[], reactions:[], legendaryActions:[],
       environment:'', notes:'Seeded from your Monster Revamp notes as an example - edit or delete freely.', loot:'',
-      status:'ready', importWarnings:[], variantOf:''
+      status:'ready', importWarnings:[], variantOf:'', disableAutoRules:false
     },
     {
       id: uid(), name:'Zombie', type:'Undead', subtypes:'', tags:[], elementalAlignment:'', tier:'Iron', cr:'1/4',
@@ -591,7 +608,7 @@ function buildSeedMonsters(){
       actions:[{name:'Slam', text:'Melee Weapon Attack: +3 to hit, reach 5 ft., one target. Hit: 4 (1d6+1) bludgeoning damage.'}],
       bonusActions:[], reactions:[], legendaryActions:[],
       environment:'', notes:'Seeded as an example - the Fire weakness and Radiant vulnerability are not listed manually here on purpose. Open this monster in the builder and click "Suggest type defaults" to see them pulled in automatically from the Undead type rules.', loot:'',
-      status:'ready', importWarnings:[], variantOf:''
+      status:'ready', importWarnings:[], variantOf:'', disableAutoRules:false
     }
   ];
 }
@@ -1292,7 +1309,7 @@ function viewMonster(id){
       ${['str','dex','con','int','wis','cha'].map(a => `<div><label>${a.toUpperCase()}</label>${h(m.abilities[a])}</div>`).join('')}
     </div>
     <p class="muted" style="margin-top:0.5rem;">${m.savingThrows?'<strong>Saves</strong> '+h(m.savingThrows)+'. ':''}${m.skills?'<strong>Skills</strong> '+h(m.skills)+'. ':''}${m.senses?'<strong>Senses</strong> '+h(m.senses)+'. ':''}${m.languages?'<strong>Languages</strong> '+h(m.languages)+'.':''}</p>
-    <div class="section-title">Damage profile (effective, incl. auto type defaults)</div>
+    <div class="section-title">Damage profile ${m.disableAutoRules ? '(auto-rules disabled for this monster - manual entries only)' : '(effective, incl. auto type defaults)'}</div>
     <div class="pill-row">
       ${profile.length? profile.map(p => `<span class="tag ${p.category} ${p.source==='auto'?'auto':''}" title="${h(p.note||'')}">${p.category==='resistance'&&p.mode==='boon'?'Boon (resist)':p.category} ${h(p.damageType)}${p.extraDamage?' (+'+h(p.extraDamage)+')':''}${p.source==='auto'?' *':''}</span>`).join('') : '<span class="muted">None set.</span>'}
     </div>
@@ -1483,8 +1500,9 @@ function renderBuilder(){
     </div>
 
     <div class="section-title">Damage profile <span class="muted" style="text-transform:none;">(resistance/immunity/vulnerability/weakness/boon)</span></div>
+    <label style="display:flex;align-items:center;gap:0.4rem;width:auto;text-transform:none;font-size:0.85rem;margin-bottom:0.5rem;"><input type="checkbox" style="width:auto;" ${d.disableAutoRules?'checked':''} onchange="toggleDisableAutoRules(this.checked)"> Disable automatic type/tag rules for this monster (Type-based auto-rules and the built-in house rules won't apply - only rows listed below will)</label>
     <div class="row-actions" style="margin-bottom:0.5rem; flex-wrap:wrap;">
-      <button class="btn small secondary" onclick="suggestTypeDefaults()">Suggest type defaults</button>
+      <button class="btn small secondary" onclick="suggestTypeDefaults()" ${d.disableAutoRules?'disabled title="Auto-rules are disabled for this monster - enable the checkbox above to use this"':''}>Suggest type defaults</button>
       <button class="btn small secondary" onclick="addDamageRow()">+ Add blank row</button>
       <select id="library-pick" style="width:auto;">
         <option value="">-- add from library --</option>
@@ -1524,6 +1542,11 @@ function toggleTag(tag, checked){
   d.tags = d.tags || [];
   if(checked){ if(!d.tags.includes(tag)) d.tags.push(tag); }
   else { d.tags = d.tags.filter(t => t!==tag); }
+  render();
+}
+function toggleDisableAutoRules(checked){
+  captureBuilderForm();
+  state.draftMonster.disableAutoRules = checked;
   render();
 }
 function renderDamageRows(d){
@@ -1977,6 +2000,9 @@ function monsterChips(monster){
   const auto = computeTypeDefaults(monster);
   const byRule = id => auto.find(a => a.ruleId===id);
   const chips = [];
+  if(monster.disableAutoRules){
+    chips.push({label:'Auto-rules OFF', tooltip:'This monster has automatic type/tag rules turned off in the builder - only its manually-listed damage profile rows apply. Tooltips below show what WOULD apply if it were re-enabled.', muted:true});
+  }
   if(monster.type){
     const notes = [];
     ['undead-radiant','undead-fire-weakness','giant-nonmagical','fey-iron','fiend-celestial-orichalcum','elemental-cycle','construct-adamantine'].forEach(id => {
@@ -2013,7 +2039,7 @@ function renderCombatantDetail(monster){
   const profile = getEffectiveProfile(monster);
   return `<div class="combatant-detail">
     <p class="muted" style="margin:0.3rem 0;">${h(monster.size)} ${h(monster.type)}${monster.subtypes?' ('+h(monster.subtypes)+')':''} &middot; Speed ${h(monster.speed)}${monster.senses?' &middot; '+h(monster.senses):''}</p>
-    <div class="section-title" style="margin-top:0.3rem;">Damage profile</div>
+    <div class="section-title" style="margin-top:0.3rem;">Damage profile${monster.disableAutoRules ? ' (auto-rules disabled)' : ''}</div>
     <div class="pill-row">
       ${profile.length ? profile.map(p => `<span class="tag ${p.category} ${p.source==='auto'?'auto':''}" title="${h(p.note||'')}">${p.category==='resistance'&&p.mode==='boon'?'Boon (resist)':p.category} ${h(p.damageType)}${p.extraDamage?' (+'+h(p.extraDamage)+')':''}${p.source==='auto'?' *':''}</span>`).join('') : '<span class="muted">None set.</span>'}
     </div>

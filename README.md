@@ -87,8 +87,11 @@ This does **not** read DDB-Importer's `.fvttadv` content packages directly - tho
 - Psychic/shadow: mutual vulnerability ("hidden war")
 - Everything: vulnerable to void
 - Tyranny of Rank: higher tier creatures resist/ignore lower-tier attacks (toggleable)
+- Tag a monster Demon: Explosive Fluids (Fire boon - explodes for Xd6 fire in a 10 ft radius, X = half CR, on a fire-damage kill)
+- Tag a monster Devil: Zuggtmoy's Rancor (Poison weakness - can't dash/disengage/dodge and flying speed is halved while poisoned or after taking poison damage)
+- Type Dragon: Conductive Scales (Lightning weakness - disadvantage on saves against lightning)
 
-Vulnerabilities can either double damage or negate a resistance. Resistances can either halve damage or apply as a "boon" (full damage plus a separate secondary effect). Weaknesses can be non-damage effects or flat bonus damage. All of this is suggested automatically based on creature type/tags, but nothing is force-applied - it's editable per monster.
+Vulnerabilities can either double damage or negate a resistance. Resistances can either halve damage or apply as a "boon" (full damage plus a separate secondary effect). Weaknesses can be non-damage effects or flat bonus damage. All of the above is suggested automatically based on creature type/tags - the first eight are wired into the engine itself, the last three live in the editable **Type-based auto-rules** list on the Overview tab (Settings -> add your own the same way). Nothing is force-applied; it's editable per monster, and any single monster can have automatic rules turned off entirely with a checkbox in the Monster Builder's Damage profile section if you want full manual control over its damage profile.
 
 ## Essences
 
