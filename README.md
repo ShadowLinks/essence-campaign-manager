@@ -12,29 +12,41 @@ No build step, no backend, no dependencies. Open `index.html` directly in a brow
 - `styles.css` - all styling
 - `app.js` - application logic (state, rendering, combat math, bestiary, monster builder, essence/confluence system, Foundry VTT importer)
 - `Dockerfile`, `docker-compose.yml`, `.dockerignore` - container packaging (nginx serving the three files above)
+- `.github/workflows/docker-publish.yml` - GitHub Actions workflow that builds the Dockerfile and pushes it to Docker Hub on every push
+
+## Docker Hub
+
+The image is published at [shadowlinks/essence-campaign-manager](https://hub.docker.com/repository/docker/shadowlinks/essence-campaign-manager). GitHub Actions rebuilds and pushes it automatically on every push to this repo that touches `Dockerfile`, `index.html`, `styles.css`, or `app.js` - there's nothing to build by hand, Unraid (or anything else) just pulls the image.
+
+**One-time setup for the auto-publish workflow to work** (only needed once, on GitHub.com - I can't do this part, since it's your Docker Hub credentials):
+1. On Docker Hub: Account Settings -> Security -> New Access Token. Give it "Read & Write" scope and copy the token (you won't see it again).
+2. On the GitHub repo: Settings -> Secrets and variables -> Actions -> New repository secret. Add two:
+   - `DOCKERHUB_USERNAME` = `shadowlinks`
+   - `DOCKERHUB_TOKEN` = the access token from step 1
+3. Push anything (or open the Actions tab and manually run "Build and publish Docker image") - it should go green and the image will show up on Docker Hub a minute or two later.
 
 ## Running it in Docker / on Unraid
 
 This is a static site, so the container is just nginx serving three files - no app server, no database.
 
-**Unraid (Docker Compose Manager plugin):** point a new Compose stack at this repo folder (or paste `docker-compose.yml`'s contents in) and bring it up. It builds a small `nginx:alpine` image, copies in `index.html`/`styles.css`/`app.js`, and publishes it on host port `8080` (change the left-hand side of the `ports:` line if that's taken - Unraid's own web UI already uses 80/443). Once it's up, hit `http://<your-unraid-ip>:8080/`.
+**Unraid (Docker Compose Manager plugin):** create a new stack and paste in `docker-compose.yml`'s contents (make sure `services:` only appears once at the top - the plugin sometimes leaves its own default line in place if you paste over part of an existing stub). It pulls `shadowlinks/essence-campaign-manager:latest` from Docker Hub - no local build, no cloning this repo onto the Unraid box at all - and publishes it on host port `8080` (change the left-hand side of the `ports:` line if that's taken - Unraid's own web UI already uses 80/443). Once it's up, hit `http://<your-unraid-ip>:8080/`.
 
 **Plain Docker, any host:**
 ```
-docker compose up -d --build
+docker compose up -d
 ```
 or without Compose:
 ```
-docker build -t essence-campaign-manager .
-docker run -d --name essence-campaign-manager -p 8080:80 --restart unless-stopped essence-campaign-manager
+docker run -d --name essence-campaign-manager -p 8080:80 --restart unless-stopped shadowlinks/essence-campaign-manager:latest
 ```
 
-**Updating after a code change:** since the files get baked into the image at build time, rebuild it (`docker compose up -d --build`, or Unraid's "Force Update"/rebuild on the stack) any time `index.html`/`styles.css`/`app.js` change. If you'd rather skip rebuilding every time, bind-mount the folder instead of relying on the `COPY` in the Dockerfile - replace the `build:`/`image:` lines in `docker-compose.yml` with `image: nginx:alpine` and add:
+**Getting updates after a code change:** push to GitHub, wait for the Actions workflow to finish (Actions tab on the repo), then re-pull on Unraid/wherever it's running:
 ```
-    volumes:
-      - ./:/usr/share/nginx/html:ro
+docker compose pull && docker compose up -d
 ```
-That serves whatever's on disk live, including this repo's `.git`/`README.md`/etc. (harmless, just extra files nginx will happily serve if requested directly - not linked from the app).
+On Unraid, the stack's "Force Update" (or Docker tab -> the container's icon -> Check for Updates) does the same thing.
+
+**Building locally instead of pulling** (e.g. to test a change before pushing): swap `image:` back out for `build: .` in `docker-compose.yml`, or run `docker build -t essence-campaign-manager .` directly - the `Dockerfile` is still there and unchanged.
 
 Remember this is still a single-session, in-memory app underneath - moving it into a container doesn't add a database. Everyone hitting the container's URL gets their own blank slate until they Import a JSON file; **Export JSON** is still how you save/share campaign data.
 
