@@ -471,6 +471,16 @@ const TYPE_RULES = [
 function computeTypeDefaults(monster){
   const out = [];
   TYPE_RULES.forEach(rule => { if(rule.test(monster)) out.push(...rule.build(monster).map(e => ({...e, source:'auto', ruleId:rule.id}))); });
+  (state.customTypeRules||[]).forEach(rule => {
+    const matches = rule.matchKind==='tag' ? (monster.tags||[]).includes(rule.matchValue) : monster.type===rule.matchValue;
+    if(matches){
+      out.push({
+        damageType: rule.damageType, category: rule.category, mode: rule.mode||'',
+        extraDamage: rule.extraDamage||'', note: rule.note||'',
+        source:'auto', ruleId:'custom:'+rule.id
+      });
+    }
+  });
   return out;
 }
 function getEffectiveProfile(monster){
@@ -489,6 +499,7 @@ let state = {
   essences: buildEssenceList(),
   confluenceCombos: [...CANON_CONFLUENCE],
   damageProperties: buildSeedDamageProperties(),
+  customTypeRules: [],
   monsters: buildSeedMonsters(),
   characters: [],
   encounter: { combatants: [], round: 1, activeIndex: -1, tyrannyOfRank: false },
@@ -498,6 +509,8 @@ let state = {
   draftCharacter: null,
   editingPropertyId: null,
   draftProperty: null,
+  editingTypeRuleId: null,
+  draftTypeRule: null,
   variantOfId: null
 };
 
@@ -525,7 +538,13 @@ function buildSeedDamageProperties(){
     {id: uid(), name:'Resonating Force resistance', damageType:'Resonating Force', category:'resistance', mode:'halved', extraDamage:'', note:'Replaces old Acid/Fire/Lightning/Thunder/nonmagical-attack resistances.'},
     {id: uid(), name:'Disruptive Force weakness', damageType:'Disruptive Force', category:'weakness', extraDamage:'', note:'Disables 1 ethereal ability for a round.'},
     {id: uid(), name:'Piercing Boon', damageType:'Piercing', category:'boon', mode:'', extraDamage:'', note:"+1 damage on this creature's melee attacks per instance of piercing damage currently stuck in it (arrows, etc.) - track by hand."},
-    {id: uid(), name:'Undead Fire Weakness', damageType:'Fire', category:'weakness', extraDamage:5, note:'Most undead take +5 fire damage.'}
+    {id: uid(), name:'Undead Fire Weakness', damageType:'Fire', category:'weakness', extraDamage:5, note:'Most undead take +5 fire damage.'},
+    {id: uid(), name:'Blighted Connection', damageType:'Necrotic', category:'weakness', extraDamage:'', note:"After taking necrotic damage, any radiant damage dealt by this creature is halved until the end of its next turn."},
+    {id: uid(), name:'Flammable Flesh', damageType:'Fire', category:'weakness', extraDamage:5, note:'Once per turn, taking fire damage sets this creature ablaze, causing them to take an extra 5 fire damage.'},
+    {id: uid(), name:'Explosive Fluids', damageType:'Fire', category:'boon', mode:'', extraDamage:'', note:"When a demon is reduced to 0 hit points from an effect that deals fire damage, they explode, dealing Xd6 fire damage in a 10-foot radius around them, with X being equal to half of the creature's CR (minimum of 1d6)."},
+    {id: uid(), name:"Zuggtmoy's Rancor", damageType:'Poison', category:'weakness', extraDamage:'', note:"While the Devil is poisoned, it is unable to take the dash, disengage, or dodge actions, and if they have a flying speed, it is halved. Taking poison damage also causes the Devil to suffer these effects, except they only last until the end of their next turn."},
+    {id: uid(), name:'Conductive Scales', damageType:'Lightning', category:'weakness', extraDamage:'', note:'The dragon has disadvantage on saving throws against bolts of lightning or spell effects that deal lightning damage.'},
+    {id: uid(), name:'Superconductor', damageType:'Lightning', category:'immunity', mode:'', extraDamage:'', note:"Whenever this dragon would take lightning damage, it instead takes no damage and immediately regains its breath weapon. Alternative to a plain Lightning immunity entry for Blue/Bronze dragons."}
   ];
 }
 // Two example monsters seeded straight from your Monster Revamp notes (Ghost, Zombie),
@@ -587,10 +606,14 @@ function blankCharacter(){
 /* ============================== PERSISTENCE ============================== */
 
 function exportData(){
+  const excludeToggle = document.getElementById('export-exclude-unconverted');
+  const excludeUnconverted = !!(excludeToggle && excludeToggle.checked);
+  const monsters = excludeUnconverted ? state.monsters.filter(m => m.status!=='queued') : state.monsters;
   const dump = {
     damageTypes: state.damageTypes, creatureTypes: state.creatureTypes, commonTags: state.commonTags,
     confluenceCombos: state.confluenceCombos, damageProperties: state.damageProperties,
-    monsters: state.monsters, characters: state.characters,
+    customTypeRules: state.customTypeRules,
+    monsters: monsters, characters: state.characters,
     exportedAt: new Date().toISOString()
   };
   const blob = new Blob([JSON.stringify(dump, null, 2)], {type:'application/json'});
@@ -611,6 +634,7 @@ function importData(evt){
       if(data.commonTags) state.commonTags = data.commonTags;
       if(data.confluenceCombos) state.confluenceCombos = data.confluenceCombos;
       if(data.damageProperties) state.damageProperties = data.damageProperties;
+      if(data.customTypeRules) state.customTypeRules = data.customTypeRules;
       if(data.monsters) state.monsters = data.monsters;
       if(data.characters) state.characters = data.characters;
       render();
@@ -920,18 +944,30 @@ function renderOverview(){
       optional Tyranny of Rank scaling (attacker tier vs. defender tier). A weakness can also just be a non-damage effect
       (disadvantage on a save, a condition landing easier, etc.) with no flat bonus set - those are shown on the stat block
       for you to apply by hand.</p>
-      <p><strong>House rules baked into the auto-suggestions</strong> (edit the <code>TYPE_RULES</code> array near the top of the
-      script to add more): undead vulnerable to radiant &middot; giants resist nonmagical bludgeoning/piercing/slashing &middot;
+      <p><strong>House rules baked into the auto-suggestions</strong> (always on, no setup needed): undead vulnerable to radiant
+      &middot; giants resist nonmagical bludgeoning/piercing/slashing &middot;
       shapechangers vulnerable to silver &middot; fey vulnerable to cold iron &middot; constructs/structures vulnerable to
       adamantine &middot; fiends &amp; celestials vulnerable to orichalcum &middot; elementals vulnerable to the next damage type
       in the cycle cold&rarr;fire&rarr;water&rarr;lightning&rarr;earth&rarr;cold &middot; tag a monster Psychic-Aligned or
       Shadow-Aligned for the hidden psychic/shadow war &middot; everything is vulnerable to void unless tagged Void-Immune.
       These are suggestions only - the builder never forces them onto a monster, you click "Suggest type defaults" to add them
-      and can delete or edit any row afterward.</p>
+      and can delete or edit any row afterward. Want to add a rule for a type or tag not listed here? Use
+      <strong>Type-based auto-rules</strong> below.</p>
       <p>Data lives only in this browser tab while you work. Use <strong>Export JSON</strong> often to save your campaign to a
       file, and <strong>Import JSON</strong> to load it back in (also how you'd hand a copy to a co-DM, or move it between
       devices). Nothing is sent anywhere.</p>
     </div>
+  </div>
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <h2 style="border:none;">Type-based auto-rules <span class="badge">${(state.customTypeRules||[]).length} custom</span></h2>
+    </div>
+    <p class="muted">This is where you set things like "all Undead are vulnerable to Radiant" - match any Creature Type or
+    Tag to a damage-profile effect, and it auto-suggests onto every monster of that type/tag from then on (via "Suggest type
+    defaults" in the builder). The core rules from your notes are already wired in above and can't be edited here, but anything
+    else - a homebrew creature type, a rule tied to one of your own tags - goes in this list.</p>
+    <div id="type-rule-list">${renderTypeRuleList()}</div>
+    <div id="type-rule-form">${renderTypeRuleForm()}</div>
   </div>
   <div class="card">
     <h2>Manage lists</h2>
@@ -1059,6 +1095,110 @@ function saveDamageProperty(){
   state.draftProperty = null;
   document.getElementById('damage-property-list').innerHTML = renderDamagePropertyList();
   document.getElementById('damage-property-form').innerHTML = renderDamagePropertyForm();
+}
+function renderTypeRuleList(){
+  const rules = state.customTypeRules||[];
+  if(!rules.length) return '<p class="empty">No custom type rules yet.</p>';
+  return `<table><thead><tr><th>Applies to</th><th>Damage type</th><th>Category</th><th>Note</th><th></th></tr></thead><tbody>
+    ${rules.map(r => `<tr>
+      <td>${r.matchKind==='tag'?'Tag: ':'Type: '}${h(r.matchValue)}</td>
+      <td>${h(r.damageType)}</td>
+      <td><span class="tag ${r.category}">${r.category}${r.mode?' ('+h(r.mode)+')':''}${r.extraDamage?' +'+h(r.extraDamage):''}</span></td>
+      <td class="muted">${h(r.note||'')}</td>
+      <td class="row-actions">
+        <button class="btn small secondary" onclick="editTypeRule('${r.id}')">Edit</button>
+        <button class="btn small danger" onclick="deleteTypeRule('${r.id}')">Delete</button>
+      </td>
+    </tr>`).join('')}
+  </tbody></table>`;
+}
+function editTypeRule(id){
+  const r = (state.customTypeRules||[]).find(x => x.id===id);
+  if(!r) return;
+  state.editingTypeRuleId = id;
+  state.draftTypeRule = JSON.parse(JSON.stringify(r));
+  document.getElementById('type-rule-form').innerHTML = renderTypeRuleForm();
+}
+function deleteTypeRule(id){
+  if(!confirm('Delete this type rule? Monsters that already had it suggested onto their damage profile keep their own copy - this only stops it applying to new suggestions.')) return;
+  state.customTypeRules = (state.customTypeRules||[]).filter(x => x.id!==id);
+  document.getElementById('type-rule-list').innerHTML = renderTypeRuleList();
+}
+function newTypeRule(){
+  state.editingTypeRuleId = null;
+  state.draftTypeRule = {id: uid(), matchKind:'type', matchValue: state.creatureTypes[0], damageType: state.damageTypes[0], category:'vulnerability', mode:'double', extraDamage:'', note:''};
+  document.getElementById('type-rule-form').innerHTML = renderTypeRuleForm();
+}
+function renderTypeRuleForm(){
+  if(!state.draftTypeRule) return `<button class="btn small secondary" style="margin-top:0.6rem;" onclick="newTypeRule()">+ New type rule</button>`;
+  const r = state.draftTypeRule;
+  const options = r.matchKind==='tag' ? state.commonTags : state.creatureTypes;
+  return `<div class="suggest-box" style="margin-top:0.6rem;">
+    <div class="grid grid-4">
+      <div><label>Applies to</label><select id="tr-matchkind" onchange="changeDraftTypeRuleMatchKind(this.value)">
+        <option value="type" ${r.matchKind==='type'?'selected':''}>Creature type</option>
+        <option value="tag" ${r.matchKind==='tag'?'selected':''}>Tag</option>
+      </select></div>
+      <div><label>${r.matchKind==='tag'?'Tag':'Type'}</label><select id="tr-matchvalue">${options.map(o => `<option ${r.matchValue===o?'selected':''}>${h(o)}</option>`).join('')}</select></div>
+      <div><label>Damage type</label><select id="tr-damagetype">${state.damageTypes.map(dt => `<option ${r.damageType===dt?'selected':''}>${h(dt)}</option>`).join('')}</select></div>
+      <div><label>Category</label><select id="tr-category" onchange="changeDraftTypeRuleCategory(this.value)">${['vulnerability','resistance','immunity','weakness','boon'].map(c => `<option ${r.category===c?'selected':''}>${c}</option>`).join('')}</select></div>
+    </div>
+    <div class="grid grid-4" style="margin-top:0.5rem;">
+      <div><label>${r.category==='weakness'?'Flat extra dmg':'Mode'}</label>${r.category==='weakness'
+        ? `<input id="tr-extradmg" type="number" value="${h(r.extraDamage||'')}">`
+        : (r.category==='resistance' ? `<select id="tr-mode">${['halved','boon'].map(mo=>`<option ${r.mode===mo?'selected':''}>${mo}</option>`).join('')}</select>`
+          : r.category==='vulnerability' ? `<select id="tr-mode">${['double','negatesResistance'].map(mo=>`<option ${r.mode===mo?'selected':''}>${mo}</option>`).join('')}</select>`
+          : `<span class="muted">n/a</span>`)}
+      </div>
+    </div>
+    <div style="margin-top:0.5rem;"><label>Note</label><textarea id="tr-note" placeholder="Flavor text / trigger details">${h(r.note||'')}</textarea></div>
+    <div class="row-actions" style="margin-top:0.6rem;">
+      <button class="btn secondary" onclick="cancelTypeRuleForm()">Cancel</button>
+      <button class="btn" onclick="saveTypeRule()">Save rule</button>
+    </div>
+  </div>`;
+}
+function changeDraftTypeRuleMatchKind(kind){
+  captureTypeRuleForm();
+  state.draftTypeRule.matchKind = kind;
+  state.draftTypeRule.matchValue = kind==='tag' ? state.commonTags[0] : state.creatureTypes[0];
+  document.getElementById('type-rule-form').innerHTML = renderTypeRuleForm();
+}
+function changeDraftTypeRuleCategory(cat){
+  captureTypeRuleForm();
+  state.draftTypeRule.category = cat;
+  state.draftTypeRule.mode = cat==='resistance' ? 'halved' : (cat==='vulnerability' ? 'double' : '');
+  document.getElementById('type-rule-form').innerHTML = renderTypeRuleForm();
+}
+function captureTypeRuleForm(){
+  const r = state.draftTypeRule;
+  if(!r || document.getElementById('tr-matchvalue')===null) return;
+  r.matchKind = document.getElementById('tr-matchkind').value;
+  r.matchValue = document.getElementById('tr-matchvalue').value;
+  r.damageType = document.getElementById('tr-damagetype').value;
+  r.category = document.getElementById('tr-category').value;
+  r.note = document.getElementById('tr-note').value;
+  const modeEl = document.getElementById('tr-mode');
+  if(modeEl) r.mode = modeEl.value;
+  const extraEl = document.getElementById('tr-extradmg');
+  if(extraEl) r.extraDamage = extraEl.value;
+}
+function cancelTypeRuleForm(){
+  state.editingTypeRuleId = null;
+  state.draftTypeRule = null;
+  document.getElementById('type-rule-form').innerHTML = renderTypeRuleForm();
+}
+function saveTypeRule(){
+  captureTypeRuleForm();
+  const r = state.draftTypeRule;
+  if(!r.matchValue){ alert('Pick a type or tag first.'); return; }
+  state.customTypeRules = state.customTypeRules || [];
+  const idx = state.customTypeRules.findIndex(x => x.id===r.id);
+  if(idx>=0) state.customTypeRules[idx] = r; else state.customTypeRules.push(r);
+  state.editingTypeRuleId = null;
+  state.draftTypeRule = null;
+  document.getElementById('type-rule-list').innerHTML = renderTypeRuleList();
+  document.getElementById('type-rule-form').innerHTML = renderTypeRuleForm();
 }
 function addToList(listName, inputId){
   const input = document.getElementById(inputId);
@@ -1754,12 +1894,17 @@ function saveCharacter(){
 
 /* ============================== COMBAT TRACKER TAB ============================== */
 
-let combatPick = {monsterId:'', name:'', hp:'', ac:'', tier:'Iron'};
+let combatPick = {monsterId:'', name:'', hp:'', ac:'', tier:'Iron', disposition:'enemy'};
 let damageForm = {combatantId:'', amount:10, damageType: DEFAULT_DAMAGE_TYPES[0], attackerTier:''};
+const CONDITIONS = ['Blinded','Charmed','Deafened','Exhaustion 1','Exhaustion 2','Exhaustion 3','Exhaustion 4','Exhaustion 5','Exhaustion 6','Frightened','Grappled','Incapacitated','Invisible','Paralyzed','Petrified','Poisoned','Prone','Restrained','Stunned','Unconscious'];
+
+function sortedCombatants(enc){
+  return [...enc.combatants].sort((a,b) => (b.initiative||0)-(a.initiative||0));
+}
 
 function renderCombat(){
   const enc = state.encounter;
-  const sorted = [...enc.combatants].sort((a,b) => (b.initiative||0)-(a.initiative||0));
+  const sorted = sortedCombatants(enc);
   return `
   <div class="card">
     <h2>Add combatant</h2>
@@ -1776,6 +1921,7 @@ function renderCombat(){
     </div>
     <div class="grid grid-4" style="margin-top:0.5rem;">
       <div><label>Tier</label><select id="cb-tier" onchange="combatPick.tier=this.value">${TIERS.map(t => `<option ${combatPick.tier===t?'selected':''}>${t}</option>`).join('')}</select></div>
+      <div><label>Disposition</label><select id="cb-disposition" onchange="combatPick.disposition=this.value">${['ally','neutral','enemy'].map(d => `<option value="${d}" ${combatPick.disposition===d?'selected':''}>${d[0].toUpperCase()+d.slice(1)}</option>`).join('')}</select></div>
       <div><label>Initiative</label><input id="cb-init" type="number" value="0"></div>
       <div style="align-self:end;"><button class="btn" onclick="addCombatant()">+ Add to encounter</button></div>
     </div>
@@ -1786,10 +1932,12 @@ function renderCombat(){
       <h2 style="border:none;">Encounter - Round ${enc.round}</h2>
       <div class="row-actions">
         <label style="display:flex;align-items:center;gap:0.4rem;width:auto;text-transform:none;font-size:0.85rem;"><input type="checkbox" style="width:auto;" ${enc.tyrannyOfRank?'checked':''} onchange="enc.tyrannyOfRank=this.checked"> Auto-apply Tyranny of Rank</label>
-        <button class="btn secondary" onclick="nextTurn()">Next turn</button>
+        <button class="btn secondary" onclick="prevTurn()">&laquo; Previous turn</button>
+        <button class="btn secondary" onclick="nextTurn()">Next turn &raquo;</button>
         <button class="btn secondary" onclick="resetEncounter()">Reset encounter</button>
       </div>
     </div>
+    <p class="muted" style="margin-top:-0.2rem;">The active combatant auto-expands with full monster data (defenses, attacks, traits). Everyone else shows just type/tag chips - hover a chip for its house-rule summary, or click Expand to pin a card open.</p>
     ${!sorted.length ? '<p class="empty">No combatants yet.</p>' : sorted.map((c) => renderCombatant(c, enc)).join('')}
   </div>
 
@@ -1814,26 +1962,110 @@ function renderCombat(){
     <div class="log" id="combat-log">${(enc.log||[]).slice().reverse().map(l => `<div>${h(l)}</div>`).join('') || '<div class="muted">No actions logged yet.</div>'}</div>
   </div>`;
 }
+function describeRuleEntry(e){
+  let s = e.category+' to '+e.damageType;
+  if(e.extraDamage) s += ' (+'+e.extraDamage+')';
+  if(e.note) s += ' - '+e.note;
+  return s;
+}
+function customNotesFor(kind, value){
+  return (state.customTypeRules||[]).filter(r => r.matchKind===kind && r.matchValue===value)
+    .map(r => describeRuleEntry({category:r.category, damageType:r.damageType, extraDamage:r.extraDamage, note:r.note}));
+}
+function monsterChips(monster){
+  if(!monster) return [];
+  const auto = computeTypeDefaults(monster);
+  const byRule = id => auto.find(a => a.ruleId===id);
+  const chips = [];
+  if(monster.type){
+    const notes = [];
+    ['undead-radiant','undead-fire-weakness','giant-nonmagical','fey-iron','fiend-celestial-orichalcum','elemental-cycle','construct-adamantine'].forEach(id => {
+      const e = byRule(id);
+      if(e) notes.push(describeRuleEntry(e));
+    });
+    notes.push(...customNotesFor('type', monster.type));
+    chips.push({label: monster.type, tooltip: notes.length ? notes.join(' | ') : 'No special type rule attached.'});
+  }
+  (monster.tags||[]).forEach(tag => {
+    let note = '';
+    if(tag==='Shapechanger'){ const e = byRule('shapechanger-silver'); note = e ? describeRuleEntry(e) : ''; }
+    else if(tag==='Structure'){ const e = byRule('construct-adamantine'); note = e ? describeRuleEntry(e) : ''; }
+    else if(tag==='Psychic-Aligned'){ const e = byRule('psychic-aligned'); note = e ? describeRuleEntry(e) : ''; }
+    else if(tag==='Shadow-Aligned'){ const e = byRule('shadow-aligned'); note = e ? describeRuleEntry(e) : ''; }
+    else if(tag==='Void-Immune'){ note = 'Immune to the universal void vulnerability.'; }
+    const combined = [note, ...customNotesFor('tag', tag)].filter(Boolean).join(' | ');
+    chips.push({label: tag, tooltip: combined || 'No special rule attached to this tag.'});
+  });
+  if(!(monster.tags||[]).includes('Void-Immune')){
+    const e = byRule('void-universal');
+    chips.push({label:'Void-vulnerable', tooltip: e ? describeRuleEntry(e) : 'Vulnerable to void damage (universal house rule).', muted:true});
+  }
+  return chips;
+}
+function renderChipRow(monster){
+  if(!monster) return '<p class="muted" style="margin:0.3rem 0;">Custom combatant - no bestiary data linked.</p>';
+  const chips = monsterChips(monster);
+  if(!chips.length) return '';
+  return `<div class="pill-row">${chips.map(c => `<span class="tag chip-tip ${c.muted?'auto':''}">${h(c.label)}<span class="chip-tip-pop">${h(c.tooltip)}</span></span>`).join('')}</div>`;
+}
+function renderCombatantDetail(monster){
+  if(!monster) return '';
+  const profile = getEffectiveProfile(monster);
+  return `<div class="combatant-detail">
+    <p class="muted" style="margin:0.3rem 0;">${h(monster.size)} ${h(monster.type)}${monster.subtypes?' ('+h(monster.subtypes)+')':''} &middot; Speed ${h(monster.speed)}${monster.senses?' &middot; '+h(monster.senses):''}</p>
+    <div class="section-title" style="margin-top:0.3rem;">Damage profile</div>
+    <div class="pill-row">
+      ${profile.length ? profile.map(p => `<span class="tag ${p.category} ${p.source==='auto'?'auto':''}" title="${h(p.note||'')}">${p.category==='resistance'&&p.mode==='boon'?'Boon (resist)':p.category} ${h(p.damageType)}${p.extraDamage?' (+'+h(p.extraDamage)+')':''}${p.source==='auto'?' *':''}</span>`).join('') : '<span class="muted">None set.</span>'}
+    </div>
+    ${monster.conditionImmunities ? `<p class="muted" style="margin-top:0.3rem;"><strong>Condition immunities</strong> ${h(monster.conditionImmunities)}</p>` : ''}
+    ${renderTraitBlock('Traits', monster.traits)}
+    ${renderTraitBlock('Actions', monster.actions)}
+    ${renderTraitBlock('Bonus Actions', monster.bonusActions)}
+    ${renderTraitBlock('Reactions', monster.reactions)}
+    ${renderTraitBlock('Legendary Actions', monster.legendaryActions)}
+  </div>`;
+}
 function renderCombatant(c, enc){
   const pct = c.maxHp>0 ? Math.max(0, Math.min(100, Math.round(100*c.hp/c.maxHp))) : 0;
+  const sorted = sortedCombatants(enc);
+  const posIdx = sorted.findIndex(x => x.id===c.id);
   const isActive = enc.combatants[enc.activeIndex] && enc.combatants[enc.activeIndex].id===c.id;
-  return `<div class="combatant ${isActive?'active':''}">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-      <div><strong>${h(c.name)}</strong> <span class="muted">AC ${h(c.ac)} &middot; Tier ${h(c.tier)} &middot; Init <input type="number" value="${c.initiative}" style="width:60px;display:inline-block;" onchange="setInitiative('${c.id}', this.value)"></span></div>
+  const monster = c.monsterId ? state.monsters.find(m => m.id===c.monsterId) : null;
+  const disposition = c.disposition || 'enemy';
+  const expanded = c.expanded===true || (c.expanded!==false && isActive);
+  const conditions = c.conditions || [];
+  const isDown = c.maxHp>0 && c.hp<=0;
+  return `<div class="combatant disposition-${disposition} ${isActive?'active':''} ${isDown?'down':''}">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.3rem;">
+      <div>${isActive?'<span class="turn-arrow">&#9654;</span>':''}<strong>${h(c.name)}</strong>${isDown?'<span class="dead-badge">DOWN</span>':''} <span class="muted">AC ${h(c.ac)} &middot; Tier ${h(c.tier)} &middot; Init <input type="number" value="${c.initiative}" style="width:56px;display:inline-block;" onchange="setInitiative('${c.id}', this.value)"></span></div>
       <div class="row-actions">
-        ${(c.damageProfile&&c.damageProfile.length) ? '<span class="muted">'+c.damageProfile.length+' defense entries</span>' : ''}
+        <select style="width:auto;display:inline-block;" onchange="setDisposition('${c.id}', this.value)">
+          ${['ally','neutral','enemy'].map(d => `<option value="${d}" ${disposition===d?'selected':''}>${d[0].toUpperCase()+d.slice(1)}</option>`).join('')}
+        </select>
+        <button class="icon-btn" title="Move up in turn order" onclick="moveCombatant('${c.id}', -1)" ${posIdx<=0?'disabled':''}>&#9650;</button>
+        <button class="icon-btn" title="Move down in turn order" onclick="moveCombatant('${c.id}', 1)" ${posIdx>=sorted.length-1?'disabled':''}>&#9660;</button>
+        <button class="icon-btn" onclick="toggleCombatantExpanded('${c.id}')">${expanded?'Collapse':'Expand'}</button>
         <button class="btn small danger" onclick="removeCombatant('${c.id}')">Remove</button>
       </div>
     </div>
-    <div class="muted">HP ${c.hp} / ${c.maxHp}</div>
+    <div class="muted">HP <input type="number" value="${c.hp}" style="width:56px;display:inline-block;" onchange="setCombatantHp('${c.id}', this.value)"> / ${c.maxHp}</div>
     <div class="hp-bar"><div style="width:${pct}%; background:${pct<25?'var(--danger)':pct<60?'var(--warn)':'var(--good)'}"></div></div>
+    ${renderChipRow(monster)}
+    <div class="pill-row">
+      ${conditions.map(cond => `<span class="condition-badge" title="Click to remove" onclick="removeCondition('${c.id}', '${h(cond)}')">${h(cond)} &times;</span>`).join('')}
+      <select style="width:auto;display:inline-block;" onchange="if(this.value){addCondition('${c.id}', this.value); this.value='';}">
+        <option value="">+ Condition...</option>
+        ${CONDITIONS.map(cd => `<option value="${cd}">${cd}</option>`).join('')}
+      </select>
+    </div>
+    ${expanded ? renderCombatantDetail(monster) : ''}
   </div>`;
 }
 function pickBestiaryCombatant(monsterId){
-  if(!monsterId){ combatPick = {monsterId:'', name:'', hp:'', ac:'', tier:'Iron'}; renderCombatMainOnly(); return; }
+  if(!monsterId){ combatPick = {monsterId:'', name:'', hp:'', ac:'', tier:'Iron', disposition:combatPick.disposition||'enemy'}; renderCombatMainOnly(); return; }
   const m = state.monsters.find(x => x.id===monsterId);
   if(!m) return;
-  combatPick = {monsterId, name:m.name, hp:m.hp||'10', ac:m.ac||'10', tier:m.tier||'Iron'};
+  combatPick = {monsterId, name:m.name, hp:m.hp||'10', ac:m.ac||'10', tier:m.tier||'Iron', disposition:combatPick.disposition||'enemy'};
   renderCombatMainOnly();
 }
 function renderCombatMainOnly(){ render(); }
@@ -1847,10 +2079,12 @@ function addCombatant(){
     hp: maxHp, maxHp,
     ac: combatPick.ac || '10',
     tier: combatPick.tier || 'Iron',
+    disposition: combatPick.disposition || 'enemy',
+    conditions: [],
     initiative: init,
     damageProfile: monster ? getEffectiveProfile(monster) : []
   });
-  combatPick = {monsterId:'', name:'', hp:'', ac:'', tier:'Iron'};
+  combatPick = {monsterId:'', name:'', hp:'', ac:'', tier:'Iron', disposition:combatPick.disposition||'enemy'};
   render();
 }
 function removeCombatant(id){
@@ -1862,13 +2096,85 @@ function setInitiative(id, val){
   if(c) c.initiative = Number(val)||0;
   render();
 }
+function setCombatantHp(id, val){
+  const c = state.encounter.combatants.find(x => x.id===id);
+  if(c) c.hp = Math.max(0, Math.min(c.maxHp, Number(val)||0));
+  render();
+}
+function setDisposition(id, val){
+  const c = state.encounter.combatants.find(x => x.id===id);
+  if(c) c.disposition = val;
+  render();
+}
+function toggleCombatantExpanded(id){
+  const enc = state.encounter;
+  const c = enc.combatants.find(x => x.id===id);
+  if(!c) return;
+  const isActive = enc.combatants[enc.activeIndex] && enc.combatants[enc.activeIndex].id===c.id;
+  const currentlyExpanded = c.expanded===true || (c.expanded!==false && isActive);
+  c.expanded = !currentlyExpanded;
+  render();
+}
+function addCondition(id, cond){
+  const c = state.encounter.combatants.find(x => x.id===id);
+  if(!c) return;
+  c.conditions = c.conditions || [];
+  if(c.conditions.includes(cond)) return;
+  const monster = c.monsterId ? state.monsters.find(m => m.id===c.monsterId) : null;
+  const immunities = monster && monster.conditionImmunities ? monster.conditionImmunities.toLowerCase().split(',').map(s => s.trim()).filter(Boolean) : [];
+  if(immunities.some(imm => cond.toLowerCase().startsWith(imm))){
+    alert(c.name+' is immune to '+cond+'.');
+    return;
+  }
+  c.conditions.push(cond);
+  render();
+}
+function removeCondition(id, cond){
+  const c = state.encounter.combatants.find(x => x.id===id);
+  if(!c) return;
+  c.conditions = (c.conditions||[]).filter(x => x!==cond);
+  render();
+}
+function moveCombatant(id, dir){
+  const enc = state.encounter;
+  const sorted = sortedCombatants(enc);
+  const idx = sorted.findIndex(x => x.id===id);
+  const swapIdx = idx+dir;
+  if(idx<0 || swapIdx<0 || swapIdx>=sorted.length) return;
+  const tmp = sorted[idx].initiative;
+  sorted[idx].initiative = sorted[swapIdx].initiative;
+  sorted[swapIdx].initiative = tmp;
+  render();
+}
 function nextTurn(){
   const enc = state.encounter;
   if(!enc.combatants.length) return;
-  const sorted = [...enc.combatants].sort((a,b) => (b.initiative||0)-(a.initiative||0));
-  let idx = sorted.findIndex(c => enc.combatants[enc.activeIndex] && c.id===enc.combatants[enc.activeIndex].id);
-  idx = (idx+1) % sorted.length;
-  if(idx===0) enc.round++;
+  const sorted = sortedCombatants(enc);
+  const curId = enc.combatants[enc.activeIndex] && enc.combatants[enc.activeIndex].id;
+  let idx = sorted.findIndex(c => c.id===curId);
+  if(idx===-1){
+    idx = 0;
+  } else {
+    idx = (idx+1) % sorted.length;
+    if(idx===0) enc.round++;
+  }
+  enc.activeIndex = enc.combatants.findIndex(c => c.id===sorted[idx].id);
+  render();
+}
+function prevTurn(){
+  const enc = state.encounter;
+  if(!enc.combatants.length) return;
+  const sorted = sortedCombatants(enc);
+  const curId = enc.combatants[enc.activeIndex] && enc.combatants[enc.activeIndex].id;
+  let idx = sorted.findIndex(c => c.id===curId);
+  if(idx===-1){
+    idx = sorted.length-1;
+  } else if(idx===0){
+    idx = sorted.length-1;
+    if(enc.round>1) enc.round--;
+  } else {
+    idx--;
+  }
   enc.activeIndex = enc.combatants.findIndex(c => c.id===sorted[idx].id);
   render();
 }

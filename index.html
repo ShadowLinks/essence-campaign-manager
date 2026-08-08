@@ -12,6 +12,7 @@
   <nav id="tab-nav"></nav>
   <div class="spacer"></div>
   <div class="fileops">
+    <label style="display:inline-flex;align-items:center;gap:0.3rem;width:auto;text-transform:none;font-size:0.72rem;color:var(--text);margin-right:0.3rem;"><input type="checkbox" id="export-exclude-unconverted" style="width:auto;"> Exclude unconverted</label>
     <button onclick="exportData()">Export JSON</button>
     <button onclick="document.getElementById('import-file').click()">Import JSON</button>
     <input type="file" id="import-file" accept="application/json" style="display:none" onchange="importData(event)">

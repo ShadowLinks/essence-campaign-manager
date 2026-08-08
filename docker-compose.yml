@@ -1,0 +1,12 @@
+services:
+  essence-campaign-manager:
+    build: .
+    image: essence-campaign-manager:latest
+    container_name: essence-campaign-manager
+    ports:
+      # Unraid's own web UI listens on 80/443, so this maps to host port 8080 by default.
+      # Change the left-hand side (host port) if 8080 is already taken on your box.
+      - "8080:80"
+    restart: unless-stopped
+    labels:
+      net.unraid.docker.webui: "http://[IP]:[PORT:8080]/"

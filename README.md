@@ -4,13 +4,39 @@ Offline, single-session D&D homebrew campaign tool: bestiary, monster builder, c
 
 ## Running it
 
-No build step, no server, no dependencies. Open `index.html` in a browser.
+No build step, no backend, no dependencies. Open `index.html` directly in a browser, or serve it with any static webserver (see Docker/Unraid below).
 
 ## Files
 
 - `index.html` - page shell and markup
 - `styles.css` - all styling
 - `app.js` - application logic (state, rendering, combat math, bestiary, monster builder, essence/confluence system, Foundry VTT importer)
+- `Dockerfile`, `docker-compose.yml`, `.dockerignore` - container packaging (nginx serving the three files above)
+
+## Running it in Docker / on Unraid
+
+This is a static site, so the container is just nginx serving three files - no app server, no database.
+
+**Unraid (Docker Compose Manager plugin):** point a new Compose stack at this repo folder (or paste `docker-compose.yml`'s contents in) and bring it up. It builds a small `nginx:alpine` image, copies in `index.html`/`styles.css`/`app.js`, and publishes it on host port `8080` (change the left-hand side of the `ports:` line if that's taken - Unraid's own web UI already uses 80/443). Once it's up, hit `http://<your-unraid-ip>:8080/`.
+
+**Plain Docker, any host:**
+```
+docker compose up -d --build
+```
+or without Compose:
+```
+docker build -t essence-campaign-manager .
+docker run -d --name essence-campaign-manager -p 8080:80 --restart unless-stopped essence-campaign-manager
+```
+
+**Updating after a code change:** since the files get baked into the image at build time, rebuild it (`docker compose up -d --build`, or Unraid's "Force Update"/rebuild on the stack) any time `index.html`/`styles.css`/`app.js` change. If you'd rather skip rebuilding every time, bind-mount the folder instead of relying on the `COPY` in the Dockerfile - replace the `build:`/`image:` lines in `docker-compose.yml` with `image: nginx:alpine` and add:
+```
+    volumes:
+      - ./:/usr/share/nginx/html:ro
+```
+That serves whatever's on disk live, including this repo's `.git`/`README.md`/etc. (harmless, just extra files nginx will happily serve if requested directly - not linked from the app).
+
+Remember this is still a single-session, in-memory app underneath - moving it into a container doesn't add a database. Everyone hitting the container's URL gets their own blank slate until they Import a JSON file; **Export JSON** is still how you save/share campaign data.
 
 ## Data persistence
 
