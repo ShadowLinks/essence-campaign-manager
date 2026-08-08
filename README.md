@@ -50,19 +50,18 @@ On Unraid, the stack's "Force Update" (or Docker tab -> the container's icon -> 
 
 Remember this is still a single-session, in-memory app underneath - moving it into a container doesn't add a database. Everyone hitting the container's URL gets their own blank slate until they Import a JSON file; **Export JSON** is still how you save/share campaign data.
 
-## Tailscale
+## Tailscale (via Unraid's built-in per-container toggle)
 
-`docker-compose.yml` includes a `tailscale` sidecar service so this is reachable over your tailnet, not just your LAN.
+`docker-compose.yml` maps a persistent local folder, `./tailscale-state`, to `/config` inside the container. That's what was missing when Unraid's own "Tailscale" toggle errored with `Couldn't detect persistent Docker directory for .tailscale_state` - the toggle needs somewhere durable inside the container to keep its state, and without a mapped volume there was nowhere for it to point at.
 
-Skip Unraid's own "Tailscale" toggle on this container - that's the thing that produced the `.tailscale_state` error. It's built for containers created through the Unraid Docker UI template and the Unraid/Tailscale community's own guidance is that it isn't reliable on compose-managed containers ([Unraid Tailscale docs](https://docs.unraid.net/unraid-os/system-administration/secure-your-server/tailscale/), [forum thread on compose compatibility](https://forums.unraid.net/topic/184825-compose-tailscale-plugin-compatibility/)). The sidecar in this compose file is the pattern [Tailscale's own docs](https://tailscale.com/docs/features/containers/docker/how-to/connect-docker-container) recommend for compose stacks instead, and it's already wired in.
+**One-time setup, after pulling this update and recreating the container:**
+1. Unraid's **Docker** tab -> click this container's icon -> **Edit**.
+2. Find the **Tailscale** section and enable it.
+3. Toggle **Advanced View** (top right of that panel) so the "Tailscale State Directory" field shows up.
+4. Set it to `/config/.tailscale_state`.
+5. **Apply**.
 
-**One-time setup:**
-1. Generate an auth key at [the Tailscale admin console](https://login.tailscale.com/admin/settings/keys) - "Generate auth key...". Leave **Ephemeral** off (so the node doesn't drop off your tailnet on restart); a **reusable** key means the container can re-auth itself if the state volume is ever wiped.
-2. Copy `.env.example` to `.env` in the same folder as `docker-compose.yml`, and paste the key in as `TS_AUTHKEY=...`. `.env` is gitignored - the key never gets committed.
-3. `docker compose up -d` (or bring the stack up in Unraid's Compose Manager as usual).
-4. Check the Tailscale admin console's Machines list - a device named `essence-campaign-manager` should show up. Once it's connected, the app is reachable at `http://essence-campaign-manager:8080/` from any device on your tailnet (assuming MagicDNS is on), on top of the existing `http://<unraid-ip>:8080/` on your LAN.
-
-Tailscale's own state (keys, node identity) persists in the `./tailscale-state` folder next to the compose file - also gitignored, and machine-specific, so don't copy it between hosts.
+Unraid will install and start Tailscale inside the container itself (no separate container, no auth key to paste in - it gives you a login link/QR code to approve the node from the Tailscale admin console the first time). The `./tailscale-state` folder next to `docker-compose.yml` is where that state actually lives on disk, gitignored since it's machine-specific.
 
 Don't want Tailscale at all? The bottom of `docker-compose.yml` has the three-line change to strip the sidecar back out.
 
