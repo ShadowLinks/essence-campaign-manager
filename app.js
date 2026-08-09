@@ -1247,16 +1247,36 @@ function removeFromList(listName, val){
 
 /* ============================== BESTIARY TAB ============================== */
 
-let bestiaryFilter = {search:'', type:'', tier:'', status:''};
+let bestiaryFilter = {search:'', type:'', tier:'', status:'', crMin:'', crMax:'', sort:''};
+
+// CR can be a plain number ("5") or a sub-1 fraction ("1/8","1/4","1/2") - parse both to a
+// comparable number. Blank/unparseable CR sorts/filters as -1 so it doesn't collide with CR 0.
+function crToNumber(cr){
+  if(cr===undefined || cr===null || cr==='') return -1;
+  const s = String(cr).trim();
+  if(s.includes('/')){
+    const [n,d] = s.split('/').map(Number);
+    if(!d) return -1;
+    return n/d;
+  }
+  const n = Number(s);
+  return Number.isFinite(n) ? n : -1;
+}
 
 function filteredBestiary(){
-  return state.monsters.filter(m => {
+  let list = state.monsters.filter(m => {
     if(bestiaryFilter.search && !m.name.toLowerCase().includes(bestiaryFilter.search.toLowerCase())) return false;
     if(bestiaryFilter.type && m.type !== bestiaryFilter.type) return false;
     if(bestiaryFilter.tier && m.tier !== bestiaryFilter.tier) return false;
     if(bestiaryFilter.status && (m.status||'ready') !== bestiaryFilter.status) return false;
+    if(bestiaryFilter.crMin!=='' && crToNumber(m.cr) < crToNumber(bestiaryFilter.crMin)) return false;
+    if(bestiaryFilter.crMax!=='' && crToNumber(m.cr) > crToNumber(bestiaryFilter.crMax)) return false;
     return true;
   });
+  if(bestiaryFilter.sort==='cr-asc') list = list.slice().sort((a,b) => crToNumber(a.cr)-crToNumber(b.cr));
+  else if(bestiaryFilter.sort==='cr-desc') list = list.slice().sort((a,b) => crToNumber(b.cr)-crToNumber(a.cr));
+  else if(bestiaryFilter.sort==='name-asc') list = list.slice().sort((a,b) => (a.name||'').localeCompare(b.name||''));
+  return list;
 }
 function renderBestiary(){
   const list = filteredBestiary();
@@ -1277,6 +1297,14 @@ function renderBestiary(){
         <option value="">All (ready + queue)</option>
         <option value="ready" ${bestiaryFilter.status==='ready'?'selected':''}>Ready only</option>
         <option value="queued" ${bestiaryFilter.status==='queued'?'selected':''}>Needs conversion (${queuedCount})</option>
+      </select>
+      <input type="text" inputmode="decimal" placeholder="CR min (e.g. 1/4)" style="max-width:130px;" value="${h(bestiaryFilter.crMin)}" oninput="bestiaryFilter.crMin=this.value; renderBestiaryList();">
+      <input type="text" inputmode="decimal" placeholder="CR max" style="max-width:130px;" value="${h(bestiaryFilter.crMax)}" oninput="bestiaryFilter.crMax=this.value; renderBestiaryList();">
+      <select onchange="bestiaryFilter.sort=this.value; renderBestiaryList();">
+        <option value="">Sort: default order</option>
+        <option value="name-asc" ${bestiaryFilter.sort==='name-asc'?'selected':''}>Sort: name (A-Z)</option>
+        <option value="cr-asc" ${bestiaryFilter.sort==='cr-asc'?'selected':''}>Sort: CR (low-high)</option>
+        <option value="cr-desc" ${bestiaryFilter.sort==='cr-desc'?'selected':''}>Sort: CR (high-low)</option>
       </select>
       <button class="btn secondary" onclick="document.getElementById('foundry-import-file').click()">Import Foundry file</button>
       <input type="file" id="foundry-import-file" accept=".json,.db,.txt,application/json" style="display:none" onchange="importFoundryFile(event)">
