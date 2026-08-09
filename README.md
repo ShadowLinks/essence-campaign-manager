@@ -75,6 +75,38 @@ The bestiary tab has an "Import Foundry file" button that reads a JSON export of
 
 This does **not** read DDB-Importer's `.fvttadv` content packages directly - those are encrypted, licensed D&D Beyond content and are intentionally not decoded. The supported path is: import your content into a Foundry world via DDB-Importer as normal, then run a GM script macro to export the resulting world compendium to plain JSON, and import that JSON here.
 
+### GM export macro
+
+Run this inside Foundry (GM only) to dump a world compendium's NPC actors to a JSON file you can then feed into this app's "Import Foundry file" button:
+
+1. Open the **Macros** directory in Foundry.
+2. **Create Macro** -> Type: **Script**.
+3. Paste the code below and **Save**.
+4. Drag it to your hotbar and click it to run.
+
+```js
+// Export a compendium's NPC actors to JSON for external tools. GM only.
+const actorPacks = game.packs.filter(p => p.documentName === "Actor");
+let pack = actorPacks.find(p => /monster manual/i.test(p.metadata.label));
+
+if (!pack) {
+  const list = actorPacks.map(p => `${p.metadata.label} (id: ${p.metadata.id})`).join("<br>");
+  ui.notifications.warn("Couldn't auto-detect a Monster Manual compendium - check chat for the list.");
+  ChatMessage.create({ content: `<b>Available Actor compendiums:</b><br>${list}<br><br>Edit this macro, replace the auto-detect line with e.g. <code>pack = game.packs.get("world.your-pack-id");</code>, and run it again.` });
+} else {
+  const docs = await pack.getDocuments();
+  const data = docs.filter(d => d.type === "npc").map(d => d.toObject());
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `${pack.metadata.label || "monsters"}.json`; a.click();
+  URL.revokeObjectURL(url);
+  ui.notifications.info(`Exported ${data.length} NPC actors from ${pack.metadata.label}.`);
+}
+```
+
+It auto-detects a compendium whose label contains "monster manual". If it can't find one, it posts every Actor-type compendium's name and ID to chat instead of guessing wrong - edit the `pack = game.packs.get(...)` line it suggests with the correct ID and run it again. The download comes out as a plain `.json` file of NPC actor data, ready to hand to this app's Foundry importer.
+
 ## House rules encoded in the damage/type engine
 
 - Undead: vulnerable to radiant, weak to fire (flat bonus damage)
