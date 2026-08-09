@@ -3,6 +3,3 @@ node_modules/
 .DS_Store
 tailscale-state/
 
-# Exported campaign save data (from the app's "Export JSON" button) - this is
-# your personal game data, not source code, and shouldn't live in the repo.
-campaign-manager-data.json
