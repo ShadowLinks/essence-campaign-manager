@@ -676,14 +676,22 @@ function flushAutosaveOnUnload(){
   clearTimeout(autosaveTimer);
   const snapshot = serializeStateForPersistence();
   if(snapshot === lastSavedSnapshot) return;
+  // Deliberately NOT updating lastSavedSnapshot here, in either branch below. sendBeacon's
+  // return value only means the browser accepted the request for background delivery - it is
+  // not a confirmation the server actually received it (ad blockers and privacy extensions
+  // commonly intercept/drop sendBeacon calls specifically, since they're a classic analytics
+  // pattern). The same applies to a keepalive fetch we don't wait on. If we optimistically
+  // marked this snapshot as saved and the request was silently dropped, every future save
+  // attempt would wrongly conclude "nothing changed since last save" and skip sending forever,
+  // permanently losing data with no further attempts. Leaving lastSavedSnapshot untouched means
+  // the worst case is one harmless redundant write next time a real (confirmed) save fires -
+  // far better than silently going dark.
   if(navigator.sendBeacon){
-    const sent = navigator.sendBeacon('/api/state', new Blob([snapshot], {type:'application/json'}));
-    if(sent) lastSavedSnapshot = snapshot;
+    navigator.sendBeacon('/api/state', new Blob([snapshot], {type:'application/json'}));
   } else {
     // Older browsers without sendBeacon: a keepalive fetch is the next-best option and also
     // survives navigation in most of them, though with a smaller size limit than sendBeacon.
     fetch('/api/state', { method:'POST', headers:{'Content-Type':'application/json'}, body: snapshot, keepalive:true }).catch(()=>{});
-    lastSavedSnapshot = snapshot;
   }
 }
 document.addEventListener('visibilitychange', () => { if(document.visibilityState==='hidden') flushAutosaveOnUnload(); });
