@@ -3,3 +3,8 @@ node_modules/
 .DS_Store
 tailscale-state/
 
+# Live, running-container campaign data (auto-saved to /data/state.json inside the
+# container - see server.js and docker-compose.yml's volume mount). This is separate
+# from campaign-manager-data.json in the repo root, which is bundled *sample* data used
+# only to seed a brand-new install and is intentionally tracked.
+data/

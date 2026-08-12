@@ -10,6 +10,11 @@ services:
       # Change the left-hand side (host port) if 8080 is already taken on your box.
       - "8080:80"
     volumes:
+      # Persistent campaign data - the app auto-saves to /data/state.json inside the
+      # container, which lives here on disk so it survives container restarts, recreates,
+      # and image updates. On a brand-new install (empty ./data folder) it seeds itself
+      # from the bundled campaign-manager-data.json sample data baked into the image.
+      - ./data:/data
       # Persistent, mapped directory for Unraid's built-in per-container Tailscale
       # hook to store its ".tailscale_state" in - this is what was missing when it
       # errored with "Couldn't detect persistent Docker directory for .tailscale_state".

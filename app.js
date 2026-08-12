@@ -638,6 +638,49 @@ function blankCharacter(){
 
 /* ============================== PERSISTENCE ============================== */
 
+// Server-side autosave/autoload against /api/state (see server.js). This is purely additive:
+// if the app is opened without that backend (e.g. index.html opened directly as a file, or an
+// older static-only deployment), every fetch() below just fails silently and the app behaves
+// exactly as before - in-memory only, saved/loaded by hand via Export/Import JSON.
+const PERSISTED_FIELDS = ['damageTypes','creatureTypes','commonTags','confluenceCombos','damageProperties','customTypeRules','monsters','characters'];
+let autosaveEnabled = false;
+let autosaveTimer = null;
+let lastSavedSnapshot = null;
+
+function serializeStateForPersistence(){
+  const dump = {};
+  PERSISTED_FIELDS.forEach(f => dump[f] = state[f]);
+  return JSON.stringify(dump);
+}
+function scheduleAutosave(){
+  if(!autosaveEnabled) return;
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(runAutosave, 1200);
+}
+function runAutosave(){
+  const snapshot = serializeStateForPersistence();
+  if(snapshot === lastSavedSnapshot) return;
+  fetch('/api/state', { method:'PUT', headers:{'Content-Type':'application/json'}, body: snapshot })
+    .then(res => { if(res.ok) lastSavedSnapshot = snapshot; else console.warn('Autosave failed:', res.status); })
+    .catch(err => console.warn('Autosave unavailable (no server persistence backend):', err.message));
+}
+function loadPersistedStateThenRender(){
+  fetch('/api/state').then(res => {
+    if(!res.ok) throw new Error('no persisted state (status '+res.status+')');
+    return res.json();
+  }).then(data => {
+    if(data && typeof data === 'object'){
+      PERSISTED_FIELDS.forEach(f => { if(data[f] !== undefined) state[f] = data[f]; });
+      lastSavedSnapshot = serializeStateForPersistence();
+    }
+  }).catch(err => {
+    console.info('Starting with local defaults (persistence API not available):', err.message);
+  }).finally(() => {
+    autosaveEnabled = true;
+    render();
+  });
+}
+
 function exportData(){
   const excludeToggle = document.getElementById('export-exclude-unconverted');
   const excludeUnconverted = !!(excludeToggle && excludeToggle.checked);
@@ -951,6 +994,7 @@ function render(){
   else if(state.activeTab==='builder') main.innerHTML = renderBuilder();
   else if(state.activeTab==='essences') main.innerHTML = renderEssences();
   else if(state.activeTab==='combat') main.innerHTML = renderCombat();
+  scheduleAutosave();
 }
 function setTab(id){
   if(state.activeTab==='builder') captureBuilderForm();
@@ -2272,4 +2316,4 @@ function applyDamage(){
 }
 
 /* ============================== INIT ============================== */
-render();
+loadPersistedStateThenRender();

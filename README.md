@@ -4,14 +4,16 @@ Offline, single-session D&D homebrew campaign tool: bestiary, monster builder, c
 
 ## Running it
 
-No build step, no backend, no dependencies. Open `index.html` directly in a browser, or serve it with any static webserver (see Docker/Unraid below).
+No build step, no npm dependencies. Open `index.html` directly in a browser and it works exactly like before (in-memory only, use Export/Import JSON to save/load). Serve it with `server.js` (see Docker/Unraid below) instead and it also autosaves to disk so data survives restarts - see **Data persistence** below.
 
 ## Files
 
 - `index.html` - page shell and markup
 - `styles.css` - all styling
-- `app.js` - application logic (state, rendering, combat math, bestiary, monster builder, essence/confluence system, Foundry VTT importer)
-- `Dockerfile`, `docker-compose.yml`, `.dockerignore` - container packaging (nginx serving the three files above)
+- `app.js` - application logic (state, rendering, combat math, bestiary, monster builder, essence/confluence system, Foundry VTT importer, server autosave/autoload)
+- `server.js` - tiny dependency-free Node server: serves the three files above and exposes a `/api/state` endpoint that autosaves/loads campaign data to a mounted volume
+- `campaign-manager-data.json` - bundled sample campaign data, used to seed a brand-new install's persisted storage on first boot
+- `Dockerfile`, `docker-compose.yml`, `.dockerignore` - container packaging
 - `.github/workflows/docker-publish.yml` - GitHub Actions workflow that builds the Dockerfile and pushes it to Docker Hub on every push
 
 ## Docker Hub
@@ -27,7 +29,7 @@ The image is published at [shadowlinks/essence-campaign-manager](https://hub.doc
 
 ## Running it in Docker / on Unraid
 
-This is a static site, so the container is just nginx serving three files - no app server, no database.
+The container runs `server.js` - a tiny built-in Node server (no npm dependencies) that serves the static files and auto-saves campaign data to a mounted volume so it survives restarts. Still no external database to run or manage.
 
 **Unraid (Docker Compose Manager plugin):** create a new stack and paste in `docker-compose.yml`'s contents (make sure `services:` only appears once at the top - the plugin sometimes leaves its own default line in place if you paste over part of an existing stub). It pulls `shadowlinks/essence-campaign-manager:latest` from Docker Hub - no local build, no cloning this repo onto the Unraid box at all - and publishes it on host port `8080` (change the left-hand side of the `ports:` line if that's taken - Unraid's own web UI already uses 80/443). Once it's up, hit `http://<your-unraid-ip>:8080/`.
 
@@ -48,7 +50,7 @@ On Unraid, the stack's "Force Update" (or Docker tab -> the container's icon -> 
 
 **Building locally instead of pulling** (e.g. to test a change before pushing): swap `image:` back out for `build: .` in `docker-compose.yml`, or run `docker build -t essence-campaign-manager .` directly - the `Dockerfile` is still there and unchanged.
 
-Remember this is still a single-session, in-memory app underneath - moving it into a container doesn't add a database. Everyone hitting the container's URL gets their own blank slate until they Import a JSON file; **Export JSON** is still how you save/share campaign data.
+Note the behavior change from before: everyone hitting the container's URL now shares the **same** live, persisted campaign data (there's one save file per container, not one per browser) - see **Data persistence** below. If you want separate, isolated data sets, run separate containers with separate `./data` folders.
 
 ## Tailscale (via Unraid's built-in per-container toggle)
 
@@ -67,7 +69,9 @@ Don't want Tailscale at all? The bottom of `docker-compose.yml` has the three-li
 
 ## Data persistence
 
-The app keeps everything in memory for the session. There's no localStorage/server - use **Export JSON** in the header to save your campaign data to a file, and **Import JSON** to load it back in on a future session. Export often.
+**When self-hosted via Docker** (this is the new default behavior): the app autosaves to `server.js`'s `/api/state` endpoint a second or two after any change, which writes to `/data/state.json` inside the container. `docker-compose.yml` maps that to `./data` next to the compose file, so campaign data survives container restarts, recreates, and image updates - you don't need to do anything for this to work. On a brand-new install (empty `./data` folder), the app seeds itself from the bundled `campaign-manager-data.json` sample data instead of starting blank.
+
+**When opened directly as a file** (double-clicking `index.html`, no server involved) or if the `/api/state` endpoint is ever unreachable for any reason: the app falls back to its old behavior automatically - everything lives only in the browser's memory for that session, and the autosave calls just fail silently in the background. **Export JSON**/**Import JSON** in the header still work exactly as before in either mode, and are still the right tool for taking a portable snapshot, moving data between machines, or keeping an off-container backup - autosave to the volume isn't a replacement for that, just a safety net against restarts.
 
 ## Foundry VTT import
 
