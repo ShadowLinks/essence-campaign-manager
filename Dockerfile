@@ -10,8 +10,10 @@ COPY server.js /app/server.js
 COPY index.html styles.css app.js /app/public/
 # Bundled sample data - used to seed a fresh install's persisted storage the first time the
 # container runs against an empty /data volume (see server.js's GET /api/state fallback).
-# If you remove campaign-manager-data.json from the repo, remove this COPY line too.
-COPY campaign-manager-data.json /app/seed-data.json
+# The bracket around the "a" makes this an optional copy: if campaign-manager-data.json isn't
+# in the repo (it's not tracked by default - see .gitignore/README), the build just skips it
+# instead of failing, and server.js falls back to returning 204 until something is saved.
+COPY campaign-manager-dat[a].json /app/seed-data.json
 
 ENV DATA_DIR=/data
 ENV PORT=80
