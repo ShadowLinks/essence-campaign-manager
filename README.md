@@ -33,6 +33,8 @@ The container runs `server.js` - a tiny built-in Node server (no npm dependencie
 
 **Unraid (Docker Compose Manager plugin):** create a new stack and paste in `docker-compose.yml`'s contents (make sure `services:` only appears once at the top - the plugin sometimes leaves its own default line in place if you paste over part of an existing stub). It pulls `shadowlinks/essence-campaign-manager:latest` from Docker Hub - no local build, no cloning this repo onto the Unraid box at all - and publishes it on host port `8080` (change the left-hand side of the `ports:` line if that's taken - Unraid's own web UI already uses 80/443). Once it's up, hit `http://<your-unraid-ip>:8080/`.
 
+The `volumes:` entries use absolute `/mnt/user/appdata/essence-campaign-manager/...` paths on purpose, not relative ones - the Compose Manager plugin stores its project files on Unraid's boot flash drive itself, and a relative path would put continuously-autosaved campaign data there instead of on the array/cache pool where persistent app data belongs. Those folders get created automatically on first run; no need to create them by hand first.
+
 **Plain Docker, any host:**
 ```
 docker compose up -d
@@ -50,11 +52,11 @@ On Unraid, the stack's "Force Update" (or Docker tab -> the container's icon -> 
 
 **Building locally instead of pulling** (e.g. to test a change before pushing): swap `image:` back out for `build: .` in `docker-compose.yml`, or run `docker build -t essence-campaign-manager .` directly - the `Dockerfile` is still there and unchanged.
 
-Note the behavior change from before: everyone hitting the container's URL now shares the **same** live, persisted campaign data (there's one save file per container, not one per browser) - see **Data persistence** below. If you want separate, isolated data sets, run separate containers with separate `./data` folders.
+Note the behavior change from before: everyone hitting the container's URL now shares the **same** live, persisted campaign data (there's one save file per container, not one per browser) - see **Data persistence** below. If you want separate, isolated data sets, run separate containers with separate data folders (change the host-side path in `volumes:` for each).
 
 ## Tailscale (via Unraid's built-in per-container toggle)
 
-`docker-compose.yml` maps a persistent local folder, `./tailscale-state`, to `/config` inside the container. That's what was missing when Unraid's own "Tailscale" toggle errored with `Couldn't detect persistent Docker directory for .tailscale_state` - the toggle needs somewhere durable inside the container to keep its state, and without a mapped volume there was nowhere for it to point at.
+`docker-compose.yml` maps a persistent folder on the array/cache pool, `/mnt/user/appdata/essence-campaign-manager/tailscale-state`, to `/config` inside the container. That's what was missing when Unraid's own "Tailscale" toggle errored with `Couldn't detect persistent Docker directory for .tailscale_state` - the toggle needs somewhere durable inside the container to keep its state, and without a mapped volume there was nowhere for it to point at.
 
 **One-time setup, after pulling this update and recreating the container:**
 1. Unraid's **Docker** tab -> click this container's icon -> **Edit**.
@@ -63,13 +65,13 @@ Note the behavior change from before: everyone hitting the container's URL now s
 4. Set it to `/config/.tailscale_state`.
 5. **Apply**.
 
-Unraid will install and start Tailscale inside the container itself (no separate container, no auth key to paste in - it gives you a login link/QR code to approve the node from the Tailscale admin console the first time). The `./tailscale-state` folder next to `docker-compose.yml` is where that state actually lives on disk, gitignored since it's machine-specific.
+Unraid will install and start Tailscale inside the container itself (no separate container, no auth key to paste in - it gives you a login link/QR code to approve the node from the Tailscale admin console the first time). `/mnt/user/appdata/essence-campaign-manager/tailscale-state` is where that state actually lives on disk.
 
-Don't want Tailscale at all? The bottom of `docker-compose.yml` has the three-line change to strip the sidecar back out.
+Don't want Tailscale at all? Just don't enable it in the container's Edit screen - the mapped `/config` volume is harmless either way.
 
 ## Data persistence
 
-**When self-hosted via Docker** (this is the new default behavior): the app autosaves to `server.js`'s `/api/state` endpoint a second or two after any change, which writes to `/data/state.json` inside the container. `docker-compose.yml` maps that to `./data` next to the compose file, so campaign data survives container restarts, recreates, and image updates - you don't need to do anything for this to work. On a brand-new install (empty `./data` folder), the app seeds itself from the bundled `campaign-manager-data.json` sample data instead of starting blank.
+**When self-hosted via Docker** (this is the new default behavior): the app autosaves to `server.js`'s `/api/state` endpoint a second or two after any change, which writes to `/data/state.json` inside the container. `docker-compose.yml` maps that to `/mnt/user/appdata/essence-campaign-manager/data` on the host (see the volumes comment in that file for why it's an absolute appdata path rather than a relative one on Unraid), so campaign data survives container restarts, recreates, and image updates - you don't need to do anything for this to work beyond having that volume line in your stack. On a brand-new install (empty data folder), the app seeds itself from the bundled `campaign-manager-data.json` sample data instead of starting blank, if that file's been committed to the repo (it's optional - see the Dockerfile).
 
 **When opened directly as a file** (double-clicking `index.html`, no server involved) or if the `/api/state` endpoint is ever unreachable for any reason: the app falls back to its old behavior automatically - everything lives only in the browser's memory for that session, and the autosave calls just fail silently in the background. **Export JSON**/**Import JSON** in the header still work exactly as before in either mode, and are still the right tool for taking a portable snapshot, moving data between machines, or keeping an off-container backup - autosave to the volume isn't a replacement for that, just a safety net against restarts.
 

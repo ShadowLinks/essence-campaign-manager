@@ -658,12 +658,36 @@ function scheduleAutosave(){
   autosaveTimer = setTimeout(runAutosave, 1200);
 }
 function runAutosave(){
+  clearTimeout(autosaveTimer);
   const snapshot = serializeStateForPersistence();
   if(snapshot === lastSavedSnapshot) return;
   fetch('/api/state', { method:'PUT', headers:{'Content-Type':'application/json'}, body: snapshot })
     .then(res => { if(res.ok) lastSavedSnapshot = snapshot; else console.warn('Autosave failed:', res.status); })
     .catch(err => console.warn('Autosave unavailable (no server persistence backend):', err.message));
 }
+// A pending debounced save (up to 1.2s away) can otherwise be lost outright if the page is
+// refreshed/closed/navigated away from before its timer fires - a plain fetch() gets aborted
+// mid-flight on unload too. sendBeacon is built specifically to survive that: the browser
+// guarantees a best-effort attempt to deliver it even as the page is going away. We fire this
+// on visibilitychange->hidden (covers refresh, tab close, switching tabs, mobile backgrounding)
+// as well as pagehide, since browser behavior on exactly which of these fires varies.
+function flushAutosaveOnUnload(){
+  if(!autosaveEnabled) return;
+  clearTimeout(autosaveTimer);
+  const snapshot = serializeStateForPersistence();
+  if(snapshot === lastSavedSnapshot) return;
+  if(navigator.sendBeacon){
+    const sent = navigator.sendBeacon('/api/state', new Blob([snapshot], {type:'application/json'}));
+    if(sent) lastSavedSnapshot = snapshot;
+  } else {
+    // Older browsers without sendBeacon: a keepalive fetch is the next-best option and also
+    // survives navigation in most of them, though with a smaller size limit than sendBeacon.
+    fetch('/api/state', { method:'POST', headers:{'Content-Type':'application/json'}, body: snapshot, keepalive:true }).catch(()=>{});
+    lastSavedSnapshot = snapshot;
+  }
+}
+document.addEventListener('visibilitychange', () => { if(document.visibilityState==='hidden') flushAutosaveOnUnload(); });
+window.addEventListener('pagehide', flushAutosaveOnUnload);
 function loadPersistedStateThenRender(){
   fetch('/api/state').then(res => {
     if(!res.ok) throw new Error('no persisted state (status '+res.status+')');
@@ -714,6 +738,7 @@ function importData(evt){
       if(data.monsters) state.monsters = data.monsters;
       if(data.characters) state.characters = data.characters;
       render();
+      runAutosave(); // a bulk Import shouldn't sit behind the usual debounce waiting to be persisted
       alert('Import complete.');
     }catch(e){ alert('Could not read that file as campaign JSON: '+e.message); }
   };
@@ -757,6 +782,7 @@ function importFoundryFile(evt){
       }
       state.monsters.push(...monsters);
       render();
+      runAutosave(); // same reasoning as the plain JSON import - don't leave a bulk import behind the debounce
       const dupeNames = monsters.filter(m => state.monsters.filter(x => x.name===m.name).length>1).length;
       let msg = 'Imported '+monsters.length+' of '+total+' entries into the conversion queue (Bestiary -> filter "Needs conversion").';
       if(dupeNames) msg += '\n'+dupeNames+' share a name with something already in your bestiary - worth a look.';
